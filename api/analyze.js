@@ -1,67 +1,54 @@
-// Import OpenAI - Vercel will auto-install from package.json
-import OpenAI from "openai";
+// Import Groq SDK
+import Groq from "groq-sdk";
 
 export default async function handler(req, res) {
   // Enable CORS
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader('Access-Control-Allow-Headers', 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version');
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS,PATCH,DELETE,POST,PUT");
+  res.setHeader("Access-Control-Allow-Headers", "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version");
 
-  // Handle OPTIONS request
-  if (req.method === 'OPTIONS') {
+  if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  // Only allow POST requests
   if (req.method !== "POST") {
-    console.log("❌ Wrong method:", req.method);
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Validate request body
   const { contractText } = req.body;
-  
+
   if (!contractText || typeof contractText !== "string" || contractText.trim() === "") {
-    console.log("❌ Invalid contract text");
-    return res.status(400).json({ error: "Invalid contract text - please provide contract text" });
+    return res.status(400).json({ error: "Invalid contract text" });
   }
 
-  console.log("✅ Received contract text, length:", contractText.length);
-
-  // Check if API key exists
-  if (!process.env.OPENAI_API_KEY) {
-    console.error("❌ OPENAI_API_KEY not found in environment variables!");
-    return res.status(500).json({ 
-      error: "OpenAI API key not configured",
-      hint: "Add OPENAI_API_KEY to Vercel Environment Variables"
+  // Check GROQ API key
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(500).json({
+      error: "GROQ_API_KEY not found!",
+      hint: "Add GROQ_API_KEY in Vercel Environment Variables"
     });
   }
-
-  console.log("✅ API key found");
 
   try {
-    // Initialize OpenAI client
-    console.log("🔑 Initializing OpenAI client...");
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY
-    });
+    // Initialize Groq client
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-    // Create the analysis prompt
-    const systemPrompt = `You are an AI contract-risk evaluator. Your job is to analyze the agreement text and subtract points from a base score of 100 every time you detect a risk.
+    const systemPrompt = `
+You are an AI contract-risk evaluator. Your job is to analyze the agreement text and subtract points from a base score of 100 every time you detect a risk.
 
 SCORING RULES:
 Start with 100 points. Subtract points based on the risks you detect. The score must NEVER go below 0.
 
 Use these deductions:
 - Unusually long payment cycle (90-120 days) → -10
-- Termination instability (e.g., 1-day notice, termination without cause, vague triggers) → -15
-- IP ambiguity (ownership unclear, no rights defined) → -20
-- Broad indemnity (one-sided, unlimited responsibility) → -20
+- Termination instability → -15
+- IP ambiguity → -20
+- Broad indemnity → -20
 - Missing liability cap → -15
 - Unilateral change-of-terms clause → -15
 - Weak confidentiality clause → -10
-- Dispute resolution disadvantage (foreign courts, costly arbitration, unclear jurisdiction) → -10
+- Dispute resolution disadvantage → -10
 - Undefined scope of work → -10
 - Weak or missing force majeure clause → -5
 
@@ -72,96 +59,54 @@ RISK ZONES:
 - 0-24 → "High Risk"
 
 OUTPUT FORMAT:
-You must return a JSON object with this exact structure:
+Return ONLY this JSON structure:
 {
-  "score": <number 0-100>,
-  "scoreLabel": "<Safe | Mostly Safe | Moderately Risky | High Risk>",
-  "summary": "<2-3 sentence summary in simple language>",
-  "highlights": ["<key point 1>", "<key point 2>", "<key point 3>"],
+  "score": <number>,
+  "scoreLabel": "<label>",
+  "summary": "<short summary>",
+  "highlights": ["point1", "point2"],
   "issues": [
-    {
-      "id": <number>,
-      "title": "<issue title>",
-      "description": "<issue description with evidence from contract>"
-    }
+    { "id": 1, "title": "Issue", "description": "Details" }
   ],
   "clauses": [
-    {
-      "title": "<clause name>",
-      "text": "<relevant text from contract>"
-    }
+    { "title": "Clause Name", "text": "Extracted text" }
   ]
 }
+`;
 
-INSTRUCTIONS:
-- Only include deductions for real risks you find in the contract
-- Always reference specific clauses when identifying issues
-- Never invent clauses that don't exist
-- Keep explanations clear and in plain language
-- Ensure the math is correct (100 - total deductions = final score, never below 0)
-- The "issues" array should contain specific problems found
-- The "clauses" array should contain important contractual terms (3-5 clauses)
-- Output ONLY valid JSON, no additional text`;
-
-    // Call OpenAI API
-    console.log("📡 Calling OpenAI API...");
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    // Call Groq API
+    const completion = await groq.chat.completions.create({
+      model: "mixtral-8x7b-32768", // Best free Groq model for long text
       messages: [
-        {
-          role: "system",
-          content: systemPrompt
-        },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
-          content: `Analyze this contract and return ONLY a JSON object:\n\n${contractText}`
+          content: `Analyze this contract and return ONLY JSON:\n\n${contractText}`
         }
       ],
-      response_format: { type: "json_object" },
       temperature: 0.2,
-      max_tokens: 2000
+      max_tokens: 3000
     });
 
-    console.log("✅ OpenAI API responded successfully");
+    const raw = completion.choices[0].message.content;
+    const result = JSON.parse(raw);
 
-    // Parse the response
-    const responseContent = completion.choices[0].message.content;
-    console.log("📄 Raw response:", responseContent);
-    
-    const analysisResult = JSON.parse(responseContent);
-    console.log("📊 Parsed analysis result");
-
-    // Validate and ensure the response has the required structure
-    const validatedResult = {
-      score: typeof analysisResult.score === 'number' ? analysisResult.score : 0,
-      scoreLabel: analysisResult.scoreLabel || "Unknown",
-      summary: analysisResult.summary || "Analysis completed",
-      highlights: Array.isArray(analysisResult.highlights) ? analysisResult.highlights : [],
-      issues: Array.isArray(analysisResult.issues) ? analysisResult.issues.map((issue, idx) => ({
-        id: issue.id || idx + 1,
-        title: issue.title || "Issue",
-        description: issue.description || ""
-      })) : [],
-      clauses: Array.isArray(analysisResult.clauses) ? analysisResult.clauses.map(clause => ({
-        title: clause.title || "Clause",
-        text: clause.text || ""
-      })) : []
+    const validated = {
+      score: typeof result.score === "number" ? result.score : 0,
+      scoreLabel: result.scoreLabel || "Unknown",
+      summary: result.summary || "",
+      highlights: Array.isArray(result.highlights) ? result.highlights : [],
+      issues: Array.isArray(result.issues) ? result.issues : [],
+      clauses: Array.isArray(result.clauses) ? result.clauses : []
     };
 
-    // Return the analysis
-    console.log("✅ Sending validated result to client");
-    return res.status(200).json(validatedResult);
+    return res.status(200).json(validated);
 
   } catch (error) {
-    console.error("❌ Analysis failed with error:", error.message);
-    console.error("Full error stack:", error.stack);
-    
-    // Return more specific error information
-    return res.status(500).json({ 
+    console.error("GROQ ERROR:", error);
+    return res.status(500).json({
       error: "Analysis failed",
-      details: error.message,
-      type: error.name,
-      hint: "Check Vercel function logs for more information"
+      message: error.message
     });
   }
 }
