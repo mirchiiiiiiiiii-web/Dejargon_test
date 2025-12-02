@@ -1,14 +1,12 @@
 {
   "version": 2,
   "functions": {
-    "api/analyze.js": {
+    "api/*.js": {
       "runtime": "nodejs18.x"
     }
   },
   "routes": [
-    {
-      "src": "/api/analyze",
-      "dest": "/api/analyze.js"
-    }
+    { "src": "/api/(.*)", "dest": "/api/$1" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
