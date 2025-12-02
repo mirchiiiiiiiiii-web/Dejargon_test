@@ -1,8 +1,8 @@
 {
   "name": "dejargon-risk-report",
   "version": "1.0.0",
-  "type": "module",
+  "type": "commonjs",
   "dependencies": {
-    "openai": "^4.73.0"
+    "groq-sdk": "^0.6.0"
   }
 }
