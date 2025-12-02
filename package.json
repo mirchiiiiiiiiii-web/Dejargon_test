@@ -1,8 +1,8 @@
 {
   "name": "dejargon-risk-report",
   "version": "1.0.0",
-  "type": "commonjs",
+  "type": "module",
   "dependencies": {
-    "groq-sdk": "^0.6.0"
+    "groq-sdk": "^0.5.0"
   }
 }
